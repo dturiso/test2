@@ -1,0 +1,10 @@
+#if ($isPoliza)
+Nº de poliza/colectivo: $numPoliza/$numDocAcreditativo$ESCAPED_LINE_SEPARATOR
+#else
+Nº tarjeta Sanitas o Identificador: $numTarjeta$ESCAPED_LINE_SEPARATOR
+#end
+Tipo documento: $tipoDocAcreditativo$ESCAPED_LINE_SEPARATOR
+Nº documento: $numDocAcreditativo$ESCAPED_LINE_SEPARATOR
+Email personal: $email$ESCAPED_LINE_SEPARATOR
+Nº móvil: $numeroTelefono$ESCAPED_LINE_SEPARATOR
+User Agent: $userAgent$ESCAPED_LINE_SEPARATOR

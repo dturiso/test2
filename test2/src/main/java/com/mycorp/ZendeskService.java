@@ -3,8 +3,12 @@ package com.mycorp;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Properties;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.velocity.Template;
+import org.apache.velocity.VelocityContext;
+import org.apache.velocity.app.Velocity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -80,6 +84,10 @@ public class ZendeskService {
     @Autowired
     @Qualifier( "emailService" )
     MensajeriaService emailService;
+    
+	private VelocityContext ctx;		// contexto de Velocity que se usara para el merge con las plantillas
+	private Template tplDatosUsuario;	// plantilla de datos Usuario
+	private Template tplDatosBravo;		// plantilla de datos Bravo
 
     /**
      * <p>Crea un ticket en Zendesk, recolectando información de distintas fuentes:
@@ -105,6 +113,12 @@ public class ZendeskService {
         String idCliente = null;
 
         StringBuilder clientName = new StringBuilder();
+        
+        try {
+			initVelocity();
+		} catch (Exception e) {
+			LOG.error("Error on Velocity initialization. Maybe velocity.properties file is not present", e);
+		}
 
         //===============================================================
         // recolecta de DATOS DE ENTRADA: usuarioAlta & userAgent
@@ -252,4 +266,14 @@ public class ZendeskService {
     {
         return resBravo.toString().replaceAll("[\\[\\]\\{\\}\\\"\\r]", "").replaceAll(ESCAPED_LINE_SEPARATOR, ESCAPE_ER + ESCAPED_LINE_SEPARATOR);
     }
+    
+	private void initVelocity() throws Exception {
+		LOG.info("Inicializando Velocity");
+		Properties prop = new Properties();
+		prop.load(getClass().getResourceAsStream("/velocity.properties"));
+		Velocity.init(prop);
+		ctx = new VelocityContext();
+        tplDatosUsuario = Velocity.getTemplate("datosUsuario.vm");
+        tplDatosBravo = Velocity.getTemplate("datosBravo.vm");
+	}
 }
