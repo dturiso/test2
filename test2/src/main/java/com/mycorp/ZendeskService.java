@@ -10,7 +10,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -27,6 +26,8 @@ import com.mycorp.support.Ticket;
 import com.mycorp.support.ValueCode;
 
 import portalclientesweb.ejb.interfaces.PortalClientesWebEJBRemote;
+import util.datos.DatosPersonales;
+import util.datos.DetallePoliza;
 import util.datos.PolizaBasico;
 import util.datos.UsuarioAlta;
 
@@ -81,13 +82,21 @@ public class ZendeskService {
     MensajeriaService emailService;
 
     /**
-     * Crea un ticket en Zendesk. Si se ha informado el nÂº de tarjeta, obtiene los datos asociados a dicha tarjeta de un servicio externo.
+     * <p>Crea un ticket en Zendesk, recolectando información de distintas fuentes:
+     * <li>parametros de entrada (usuarioAlta y userAgent)
+     * <li>servicio externo de tarjetas
+     * <li>servicio externo de polizas
+     * <li>servicio externo de BRAVO
+     * 
+     * <p>Si se produce un error en la generación del ticket, se envia un mail
+     * 
      * @param usuarioAlta
      * @param userAgent
+     * @return String 
      */
     public String altaTicketZendesk(UsuarioAlta usuarioAlta, String userAgent){
 
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = new ObjectMapper();	// mapeador Jackson: Objetos <-> JSON
         mapper.enable(SerializationFeature.INDENT_OUTPUT);
 
         StringBuilder datosUsuario = new StringBuilder();
@@ -97,8 +106,9 @@ public class ZendeskService {
 
         StringBuilder clientName = new StringBuilder();
 
-
-        // AÃ±ade los datos del formulario
+        //===============================================================
+        // recolecta de DATOS DE ENTRADA: usuarioAlta & userAgent
+        
         if(StringUtils.isNotBlank(usuarioAlta.getNumPoliza())){
             datosUsuario.append("NÂº de poliza/colectivo: ").append(usuarioAlta.getNumPoliza()).append("/").append(usuarioAlta.getNumDocAcreditativo()).append(ESCAPED_LINE_SEPARATOR);
         }else{
@@ -110,7 +120,9 @@ public class ZendeskService {
         datosUsuario.append("NÂº mÃ³vil: ").append(usuarioAlta.getNumeroTelefono()).append(ESCAPED_LINE_SEPARATOR);
         datosUsuario.append("User Agent: ").append(userAgent).append(ESCAPED_LINE_SEPARATOR);
 
-        datosBravo.append(ESCAPED_LINE_SEPARATOR + "Datos recuperados de BRAVO:" + ESCAPED_LINE_SEPARATOR + ESCAPED_LINE_SEPARATOR);
+        //===============================================================
+        // recolecta de datos de TARJETA y POLIZA de servicios externos
+
         StringBuilder datosServicio = new StringBuilder();
         // Obtiene el idCliente de la tarjeta
         if(StringUtils.isNotBlank(usuarioAlta.getNumTarjeta())){
@@ -118,10 +130,9 @@ public class ZendeskService {
                 String urlToRead = TARJETAS_GETDATOS + usuarioAlta.getNumTarjeta();
                 ResponseEntity<String> res = restTemplate.getForEntity( urlToRead, String.class);
                 if(res.getStatusCode() == HttpStatus.OK){
-                    String dusuario = res.getBody();
-                    clientName.append(dusuario);
-                    idCliente = dusuario;
-                    datosServicio.append("Datos recuperados del servicio de tarjeta:").append(ESCAPED_LINE_SEPARATOR).append(mapper.writeValueAsString(dusuario));
+                	idCliente = res.getBody();
+                    clientName.append(idCliente);
+                    datosServicio.append("Datos recuperados del servicio de tarjeta:").append(ESCAPED_LINE_SEPARATOR).append(mapper.writeValueAsString(idCliente));
                 }
             }catch(Exception e)
             {
@@ -138,15 +149,10 @@ public class ZendeskService {
 
                 PolizaBasico polizaBasicoConsulta = new PolizaBasicoFromPolizaBuilder().withPoliza( poliza ).build();
 
-                final util.datos.DetallePoliza detallePolizaResponse = portalclientesWebEJBRemote.recuperarDatosPoliza(polizaBasicoConsulta);
-
-                clientName.append(detallePolizaResponse.getTomador().getNombre()).
-                            append(" ").
-                            append(detallePolizaResponse.getTomador().getApellido1()).
-                            append(" ").
-                            append(detallePolizaResponse.getTomador().getApellido2());
-
-                idCliente = detallePolizaResponse.getTomador().getIdentificador();
+                final DetallePoliza detallePolizaResponse = portalclientesWebEJBRemote.recuperarDatosPoliza(polizaBasicoConsulta);
+                DatosPersonales tomador = detallePolizaResponse.getTomador();
+                clientName.append(tomador.getNombre()).append(" ").append(tomador.getApellido1()).append(" ").append(tomador.getApellido2());
+                idCliente = tomador.getIdentificador();
                 datosServicio.append("Datos recuperados del servicio de tarjeta:").append(ESCAPED_LINE_SEPARATOR).append(mapper.writeValueAsString(detallePolizaResponse));
             }catch(Exception e)
             {
@@ -154,24 +160,26 @@ public class ZendeskService {
             }
         }
 
+        //===============================================================
+        // recolecta de DATOS BRAVO de servicio externo
+        
+        datosBravo.append(ESCAPED_LINE_SEPARATOR + "Datos recuperados de BRAVO:" + ESCAPED_LINE_SEPARATOR + ESCAPED_LINE_SEPARATOR);
+        
         try
         {
             // Obtenemos los datos del cliente
             DatosCliente cliente = restTemplate.getForObject("http://localhost:8080/test-endpoint", DatosCliente.class, idCliente);
 
             datosBravo.append("TelÃ©fono: ").append(cliente.getGenTGrupoTmk()).append(ESCAPED_LINE_SEPARATOR);
-
-
             datosBravo.append("Feha de nacimiento: ").append(formatter.format(formatter.parse(cliente.getFechaNacimiento()))).append(ESCAPED_LINE_SEPARATOR);
 
             List< ValueCode > tiposDocumentos = getTiposDocumentosRegistro();
-            for(int i = 0; i < tiposDocumentos.size();i++)
-            {
-                if(tiposDocumentos.get(i).getCode().equals(cliente.getGenCTipoDocumento().toString()))
-                {
-                    datosBravo.append("Tipo de documento: ").append(tiposDocumentos.get(i).getValue()).append(ESCAPED_LINE_SEPARATOR);
-                }
+            for (ValueCode vc: tiposDocumentos) {
+            	if (vc.getCode().equals(cliente.getGenCTipoDocumento().toString()) ) {
+            		datosBravo.append("Tipo de documento: ").append(vc.getValue()).append(ESCAPED_LINE_SEPARATOR);
+            	}
             }
+
             datosBravo.append("NÃºmero documento: ").append(cliente.getNumeroDocAcred()).append(ESCAPED_LINE_SEPARATOR);
 
             datosBravo.append("Tipo cliente: ");
@@ -188,17 +196,17 @@ public class ZendeskService {
             }
 
             datosBravo.append("ID estado del cliente: ").append(cliente.getGenTStatus()).append(ESCAPED_LINE_SEPARATOR);
-
             datosBravo.append("ID motivo de alta cliente: ").append(cliente.getIdMotivoAlta()).append(ESCAPED_LINE_SEPARATOR);
-
             datosBravo.append("Registrado: ").append((cliente.getfInactivoWeb() == null ? "SÃ­" : "No")).append(ESCAPED_LINE_SEPARATOR + ESCAPED_LINE_SEPARATOR);
-
 
         }catch(Exception e)
         {
             LOG.error("Error al obtener los datos en BRAVO del cliente", e);
         }
 
+        //====================================================================
+        // composicion y GENERACION del TICKET. Envio de mail en caso de error
+        
         String ticket = String.format(PETICION_ZENDESK, clientName.toString(), usuarioAlta.getEmail(), datosUsuario.toString()+datosBravo.toString()+
                 parseJsonBravo(datosServicio));
         ticket = ticket.replaceAll("["+ESCAPED_LINE_SEPARATOR+"]", " ");
@@ -210,8 +218,8 @@ public class ZendeskService {
 
         }catch(Exception e){
             LOG.error("Error al crear ticket ZENDESK", e);
+            
             // Send email
-
             CorreoElectronico correo = new CorreoElectronico( Long.parseLong(ZENDESK_ERROR_MAIL_FUNCIONALIDAD), "es" )
                     .addParam(datosUsuario.toString().replaceAll(ESCAPE_ER+ESCAPED_LINE_SEPARATOR, HTML_BR))
                     .addParam(datosBravo.toString().replaceAll(ESCAPE_ER+ESCAPED_LINE_SEPARATOR, HTML_BR));
