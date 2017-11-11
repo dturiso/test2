@@ -1,1 +1,13 @@
+${ESCAPED_LINE_SEPARATOR}Datos recuperados de BRAVO:${ESCAPED_LINE_SEPARATOR}${ESCAPED_LINE_SEPARATOR}
+Teléfono: ${genTGrupoTmk}${ESCAPED_LINE_SEPARATOR}
+Feha de nacimiento: ${fechaNacimiento}${ESCAPED_LINE_SEPARATOR}
+#foreach( $tipo in $tiposDocumentosCliente )
+Tipo de documento: $tipo${ESCAPED_LINE_SEPARATOR}
+#end
+
+Número documento: ${numeroDocAcred}${ESCAPED_LINE_SEPARATOR}
+Tipo cliente: ${genTTipoCliente}${ESCAPED_LINE_SEPARATOR}
+ID estado del cliente: ${genTStatus}${ESCAPED_LINE_SEPARATOR}
+ID motivo de alta cliente: ${idMotivoAlta}${ESCAPED_LINE_SEPARATOR}
+Registrado: ${fInactivoWeb}${ESCAPED_LINE_SEPARATOR}${ESCAPED_LINE_SEPARATOR}
 
